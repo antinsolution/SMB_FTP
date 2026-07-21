@@ -120,12 +120,11 @@ else:
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 
 DEFAULT_CONFIG = {
-    "ftp_dir": os.path.expanduser("~/Scans"),
+    "scan_dir": os.path.expanduser("~/Scans"),
     "ftp_port": 2121,
     "ftp_user": "scanner",
     "ftp_pass": "1234",
     "ftp_enabled": False,
-    "smb_dir": os.path.expanduser("~/Scans"),
     "smb_port": 1445,
     "smb_share": "SCANS",
     "smb_enabled": False,
@@ -139,11 +138,14 @@ def load_config():
         # Merge with defaults so new keys are filled in
         merged = DEFAULT_CONFIG.copy()
         merged.update(cfg)
+        # Migrate old ftp_dir/smb_dir to scan_dir
+        if "scan_dir" not in cfg:
+            old_dir = cfg.get("ftp_dir") or cfg.get("smb_dir") or os.path.expanduser("~/Scans")
+            merged["scan_dir"] = old_dir
         # Expand ~ trong đường dẫn
-        for key in ("ftp_dir", "smb_dir"):
-            val = merged.get(key, "")
-            if val.startswith("~"):
-                merged[key] = os.path.expanduser(val)
+        val = merged.get("scan_dir", "")
+        if val.startswith("~"):
+            merged["scan_dir"] = os.path.expanduser(val)
         return merged
     except (FileNotFoundError, json.JSONDecodeError):
         return DEFAULT_CONFIG.copy()
@@ -151,12 +153,11 @@ def load_config():
 
 def save_config(data):
     try:
-        # Resolve paths to portable form before saving
         data = dict(data)
-        for key in ("ftp_dir", "smb_dir"):
-            val = data.get(key, "")
-            if val.startswith(os.path.expanduser("~")):
-                data[key] = val.replace(os.path.expanduser("~"), "~")
+        # Resolve path to portable form before saving
+        val = data.get("scan_dir", "")
+        if val.startswith(os.path.expanduser("~")):
+            data["scan_dir"] = val.replace(os.path.expanduser("~"), "~")
         with open(CONFIG_PATH, "w") as f:
             json.dump(data, f, indent=2)
     except Exception:
@@ -210,97 +211,93 @@ class App(tk.Tk):
     # ── UI ────────────────────────────────────────────────────────────────────
 
     def _build_ui(self):
-        PAD = dict(padx=10, pady=5)
-        IPAD = dict(padx=3, pady=0)
+        main = ttk.Frame(self, padding=10)
+        main.pack(fill="both", expand=True)
 
-        nb = ttk.Notebook(self)
-        nb.pack(fill="both", expand=True, padx=10, pady=10)
+        # ── Header ─────────────────────────────────────────────────────────────
+        hdr = ttk.Frame(main)
+        hdr.pack(fill="x", pady=(0, 10))
+        ttk.Label(hdr, text="📡 ScanServer", font=("", 14, "bold"),
+                  foreground="#2563EB").pack(side="left")
+        local_ip = get_local_ip()
+        ttk.Label(hdr, text=f"🌐 {local_ip}", font=("", 9),
+                  foreground="#555").pack(side="right")
 
-        # ── Tab FTP ──────────────────────────────────────────────────────────
-        ftp_frame = ttk.Frame(nb)
-        nb.add(ftp_frame, text="  FTP Server  ")
+        # ── Shared directory ───────────────────────────────────────────────────
+        dir_frame = ttk.LabelFrame(main, text="📁 Thư mục chung", padding=6)
+        dir_frame.pack(fill="x", pady=(0, 8))
 
-        self._ftp_enabled = tk.BooleanVar(value=self._config.get("ftp_enabled", False))
-        ttk.Checkbutton(ftp_frame, text="Bật FTP Server",
-                        variable=self._ftp_enabled).grid(row=0, column=0, columnspan=3,
-                                                          sticky="w", **PAD)
+        self._scan_dir = tk.StringVar(value=self._config.get("scan_dir", os.path.expanduser("~/Scans")))
+        ed = ttk.Entry(dir_frame, textvariable=self._scan_dir, width=45)
+        ed.pack(side="left", padx=(0, 4), fill="x", expand=True)
+        ttk.Button(dir_frame, text="…", width=3,
+                   command=lambda: self._browse(self._scan_dir)).pack(side="left")
 
-        self._ftp_dir = tk.StringVar(value=self._config.get("ftp_dir", os.path.expanduser("~/Scans")))
-        ttk.Label(ftp_frame, text="Thư mục:").grid(row=1, column=0, sticky="w", **PAD)
-        ttk.Entry(ftp_frame, textvariable=self._ftp_dir, width=32).grid(row=1, column=1, **PAD)
-        ttk.Button(ftp_frame, text="…", width=3,
-                   command=lambda: self._browse(self._ftp_dir)).grid(row=1, column=2, **PAD)
+        # ── Server cards side-by-side ──────────────────────────────────────────
+        cards = ttk.Frame(main)
+        cards.pack(fill="both", expand=True, pady=(0, 8))
 
-        self._ftp_port = tk.IntVar(value=self._config.get("ftp_port", 21))
-        ttk.Label(ftp_frame, text="Port:").grid(row=2, column=0, sticky="w", **PAD)
-        ttk.Spinbox(ftp_frame, from_=1, to=65535, textvariable=self._ftp_port,
-                    width=8).grid(row=2, column=1, sticky="w", **PAD)
+        # -- FTP card --
+        ftp_card = ttk.LabelFrame(cards, text="🔵 FTP Server", padding=10)
+        ftp_card.pack(side="left", fill="both", expand=True, padx=(0, 5))
 
+        gf = ttk.Frame(ftp_card)
+        gf.pack(fill="x", pady=(0, 6))
+        ttk.Label(gf, text="Port:", width=6, anchor="e").grid(row=0, column=0, padx=(0, 4), pady=2, sticky="e")
+        self._ftp_port = tk.IntVar(value=self._config.get("ftp_port", 2121))
+        ttk.Spinbox(gf, from_=1, to=65535, textvariable=self._ftp_port,
+                    width=8).grid(row=0, column=1, padx=(0, 10), pady=2, sticky="w")
+
+        ttk.Label(gf, text="User:", width=6, anchor="e").grid(row=1, column=0, padx=(0, 4), pady=2, sticky="e")
         self._ftp_user = tk.StringVar(value=self._config.get("ftp_user", "scanner"))
-        ttk.Label(ftp_frame, text="Username:").grid(row=3, column=0, sticky="w", **PAD)
-        ttk.Entry(ftp_frame, textvariable=self._ftp_user, width=18).grid(row=3, column=1,
-                                                                            sticky="w", **PAD)
+        ttk.Entry(gf, textvariable=self._ftp_user, width=14).grid(row=1, column=1, padx=(0, 10), pady=2, sticky="w")
 
+        ttk.Label(gf, text="Pass:", width=6, anchor="e").grid(row=2, column=0, padx=(0, 4), pady=2, sticky="e")
         self._ftp_pass = tk.StringVar(value=self._config.get("ftp_pass", "1234"))
-        ttk.Label(ftp_frame, text="Password:").grid(row=4, column=0, sticky="w", **PAD)
-        ttk.Entry(ftp_frame, textvariable=self._ftp_pass, show="*", width=18).grid(
-            row=4, column=1, sticky="w", **PAD)
+        ttk.Entry(gf, textvariable=self._ftp_pass, show="*", width=14).grid(row=2, column=1, padx=(0, 10), pady=2, sticky="w")
 
-        self._ftp_status = tk.StringVar(value="⚪ Chưa chạy")
-        ttk.Label(ftp_frame, textvariable=self._ftp_status,
-                  foreground="gray").grid(row=5, column=0, columnspan=3, **PAD)
-
-        self._ftp_btn = ttk.Button(ftp_frame, text="▶ Khởi động FTP",
+        ftp_btns = ttk.Frame(ftp_card)
+        ftp_btns.pack(fill="x", pady=(4, 0))
+        self._ftp_status = tk.StringVar(value="⚪")
+        ttk.Label(ftp_btns, textvariable=self._ftp_status,
+                  font=("", 10)).pack(side="left", padx=(0, 6))
+        self._ftp_btn = ttk.Button(ftp_btns, text="▶ FTP",
                                    command=self._toggle_ftp)
-        self._ftp_btn.grid(row=6, column=0, columnspan=3, pady=(2, 10))
+        self._ftp_btn.pack(side="left")
 
-        # ── Tab SMB ──────────────────────────────────────────────────────────
-        smb_frame = ttk.Frame(nb)
-        nb.add(smb_frame, text="  SMB Server  ")
+        # -- SMB card --
+        smb_card = ttk.LabelFrame(cards, text="🟠 SMB Server", padding=10)
+        smb_card.pack(side="right", fill="both", expand=True, padx=(5, 0))
 
-        self._smb_enabled = tk.BooleanVar(value=self._config.get("smb_enabled", False))
-        ttk.Checkbutton(smb_frame, text="Bật SMB Server",
-                        variable=self._smb_enabled).grid(row=0, column=0, columnspan=3,
-                                                          sticky="w", **PAD)
+        gs = ttk.Frame(smb_card)
+        gs.pack(fill="x", pady=(0, 6))
+        ttk.Label(gs, text="Port:", width=6, anchor="e").grid(row=0, column=0, padx=(0, 4), pady=2, sticky="e")
+        self._smb_port = tk.IntVar(value=self._config.get("smb_port", 1445))
+        ttk.Spinbox(gs, from_=1, to=65535, textvariable=self._smb_port,
+                    width=8).grid(row=0, column=1, padx=(0, 10), pady=2, sticky="w")
 
-        self._smb_dir = tk.StringVar(value=self._config.get("smb_dir", os.path.expanduser("~/Scans")))
-        ttk.Label(smb_frame, text="Thư mục:").grid(row=1, column=0, sticky="w", **PAD)
-        ttk.Entry(smb_frame, textvariable=self._smb_dir, width=32).grid(row=1, column=1, **PAD)
-        ttk.Button(smb_frame, text="…", width=3,
-                   command=lambda: self._browse(self._smb_dir)).grid(row=1, column=2, **PAD)
-
-        self._smb_port = tk.IntVar(value=self._config.get("smb_port", 139))
-        ttk.Label(smb_frame, text="Port:").grid(row=2, column=0, sticky="w", **PAD)
-        ttk.Spinbox(smb_frame, from_=1, to=65535, textvariable=self._smb_port,
-                    width=8).grid(row=2, column=1, sticky="w", **PAD)
-
+        ttk.Label(gs, text="Share:", width=6, anchor="e").grid(row=1, column=0, padx=(0, 4), pady=2, sticky="e")
         self._smb_share = tk.StringVar(value=self._config.get("smb_share", "SCANS"))
-        ttk.Label(smb_frame, text="Share name:").grid(row=3, column=0, sticky="w", **PAD)
-        ttk.Entry(smb_frame, textvariable=self._smb_share, width=18).grid(row=3, column=1,
-                                                                             sticky="w", **PAD)
+        ttk.Entry(gs, textvariable=self._smb_share, width=14).grid(row=1, column=1, padx=(0, 10), pady=2, sticky="w")
 
-        ttk.Label(smb_frame, text="⚠ SMB không yêu cầu mật khẩu (guest mode)",
-                  foreground="orange").grid(row=4, column=0, columnspan=3, **PAD)
+        ttk.Label(gs, text="🔓 Guest mode",
+                  foreground="orange", font=("", 8)).grid(row=2, column=0, columnspan=2, pady=2, sticky="w")
 
-        self._smb_status = tk.StringVar(value="⚪ Chưa chạy")
-        ttk.Label(smb_frame, textvariable=self._smb_status,
-                  foreground="gray").grid(row=5, column=0, columnspan=3, **PAD)
-
-        self._smb_btn = ttk.Button(smb_frame, text="▶ Khởi động SMB",
+        smb_btns = ttk.Frame(smb_card)
+        smb_btns.pack(fill="x", pady=(4, 0))
+        self._smb_status = tk.StringVar(value="⚪")
+        ttk.Label(smb_btns, textvariable=self._smb_status,
+                  font=("", 10)).pack(side="left", padx=(0, 6))
+        self._smb_btn = ttk.Button(smb_btns, text="▶ SMB",
                                    command=self._toggle_smb)
-        self._smb_btn.grid(row=6, column=0, columnspan=3, pady=(2, 10))
+        self._smb_btn.pack(side="left")
 
         # ── Bottom bar ────────────────────────────────────────────────────────
-        bar = ttk.Frame(self)
-        bar.pack(fill="x", padx=10, pady=(0, 8))
+        bar = ttk.Frame(main)
+        bar.pack(fill="x", pady=(4, 0))
 
-        # IP label bên trái
-        local_ip = get_local_ip()
-        ip_label = ttk.Label(bar, text=f"🌐 IP: {local_ip}", foreground="#2563EB")
-        ip_label.pack(side="left", **IPAD)
-
-        ttk.Button(bar, text="Thu nhỏ xuống khay",
-                   command=self._hide_to_tray).pack(side="left", padx=(10, 0))
+        ttk.Button(bar, text="🗕 Thu nhỏ",
+                   command=self._hide_to_tray).pack(side="left")
         ttk.Button(bar, text="Thoát",
                    command=self._quit).pack(side="right")
 
@@ -338,12 +335,11 @@ class App(tk.Tk):
     def _gather_config(self):
         """Thu thập các giá trị config hiện tại từ giao diện."""
         return {
-            "ftp_dir": self._ftp_dir.get(),
+            "scan_dir": self._scan_dir.get(),
             "ftp_port": self._ftp_port.get(),
             "ftp_user": self._ftp_user.get(),
             "ftp_pass": self._ftp_pass.get(),
             "ftp_enabled": (self._ftp_thread is not None and self._ftp_thread.is_alive()),
-            "smb_dir": self._smb_dir.get(),
             "smb_port": self._smb_port.get(),
             "smb_share": self._smb_share.get(),
             "smb_enabled": (self._smb_thread is not None and self._smb_thread.is_alive()),
@@ -355,9 +351,8 @@ class App(tk.Tk):
         if self._ftp_thread and self._ftp_thread.is_alive():
             self._ftp_thread.stop()
             self._ftp_thread = None
-            self._ftp_status.set("⚪ Đã dừng")
-            self._ftp_btn.config(text="▶ Khởi động FTP")
-            self._ftp_enabled.set(False)
+            self._ftp_status.set("⚪")
+            self._ftp_btn.config(text="▶ FTP")
             save_config(self._gather_config())
         else:
             if not HAS_FTP:
@@ -367,15 +362,13 @@ class App(tk.Tk):
                 self._ftp_thread = FTPThread(
                     host="0.0.0.0",
                     port=self._ftp_port.get(),
-                    scan_dir=self._ftp_dir.get(),
+                    scan_dir=self._scan_dir.get(),
                     user=self._ftp_user.get(),
                     password=self._ftp_pass.get(),
                 )
                 self._ftp_thread.start()
-                self._ftp_status.set(
-                    f"🟢 Đang chạy – 0.0.0.0:{self._ftp_port.get()}")
-                self._ftp_btn.config(text="⏹ Dừng FTP")
-                self._ftp_enabled.set(True)
+                self._ftp_status.set("🟢")
+                self._ftp_btn.config(text="⏹ FTP")
                 save_config(self._gather_config())
             except Exception as e:
                 messagebox.showerror("Lỗi FTP", str(e))
@@ -386,9 +379,8 @@ class App(tk.Tk):
         if self._smb_thread and self._smb_thread.is_alive():
             self._smb_thread.stop()
             self._smb_thread = None
-            self._smb_status.set("⚪ Đã dừng")
-            self._smb_btn.config(text="▶ Khởi động SMB")
-            self._smb_enabled.set(False)
+            self._smb_status.set("⚪")
+            self._smb_btn.config(text="▶ SMB")
             save_config(self._gather_config())
         else:
             if not HAS_SMB:
@@ -398,14 +390,12 @@ class App(tk.Tk):
                 self._smb_thread = SMBThread(
                     host="0.0.0.0",
                     port=self._smb_port.get(),
-                    scan_dir=self._smb_dir.get(),
+                    scan_dir=self._scan_dir.get(),
                     share_name=self._smb_share.get(),
                 )
                 self._smb_thread.start()
-                self._smb_status.set(
-                    f"🟢 Đang chạy – \\\\<IP>\\{self._smb_share.get().upper()}")
-                self._smb_btn.config(text="⏹ Dừng SMB")
-                self._smb_enabled.set(True)
+                self._smb_status.set("🟢")
+                self._smb_btn.config(text="⏹ SMB")
                 save_config(self._gather_config())
             except Exception as e:
                 messagebox.showerror("Lỗi SMB", str(e))
