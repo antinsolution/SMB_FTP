@@ -1,0 +1,11 @@
+{
+  "ftp_dir": "~/Scans",
+  "ftp_port": 2121,
+  "ftp_user": "scanner",
+  "ftp_pass": "1234",
+  "ftp_enabled": false,
+  "smb_dir": "/home/antinsolution/PM",
+  "smb_port": 139,
+  "smb_share": "SCANS",
+  "smb_enabled": false
+}
