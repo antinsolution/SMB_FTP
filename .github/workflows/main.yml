@@ -36,5 +36,5 @@ jobs:
       uses: actions/upload-artifact@v5
       with:
         name: SMB_FTP_SV
-        path: dist/SMB_FTP_SV
+        path: dist
         retention-days: 30
