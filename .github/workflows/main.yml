@@ -23,15 +23,18 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyinstaller pyftpdlib impacket pystray Pillow cffi
+        pip install pyinstaller
+        if (Test-Path requirements.txt) {
+            pip install -r requirements.txt
+        }
 
     - name: Build with PyInstaller
       run: |
-        pyinstaller SMB_FTP_SV.spec --clean --noconfirm
+        pyinstaller SMB_FTP_SV.spec --clean
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
         name: SMB_FTP_SV
-        path: dist
+        path: dist/SMB_FTP_SV
         retention-days: 30
