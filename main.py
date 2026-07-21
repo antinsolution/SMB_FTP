@@ -204,6 +204,9 @@ class App(tk.Tk):
         # Auto-start servers nếu lần trước đang bật
         self.after(100, self._auto_start)
 
+        # Thu nhỏ xuống khay hệ thống sau khi khởi động
+        self.after(300, self._start_minimized)
+
     # ── UI ────────────────────────────────────────────────────────────────────
 
     def _build_ui(self):
@@ -228,7 +231,7 @@ class App(tk.Tk):
         ttk.Button(ftp_frame, text="…", width=3,
                    command=lambda: self._browse(self._ftp_dir)).grid(row=1, column=2, **PAD)
 
-        self._ftp_port = tk.IntVar(value=self._config.get("ftp_port", 2121))
+        self._ftp_port = tk.IntVar(value=self._config.get("ftp_port", 21))
         ttk.Label(ftp_frame, text="Port:").grid(row=2, column=0, sticky="w", **PAD)
         ttk.Spinbox(ftp_frame, from_=1, to=65535, textvariable=self._ftp_port,
                     width=8).grid(row=2, column=1, sticky="w", **PAD)
@@ -266,7 +269,7 @@ class App(tk.Tk):
         ttk.Button(smb_frame, text="…", width=3,
                    command=lambda: self._browse(self._smb_dir)).grid(row=1, column=2, **PAD)
 
-        self._smb_port = tk.IntVar(value=self._config.get("smb_port", 1445))
+        self._smb_port = tk.IntVar(value=self._config.get("smb_port", 139))
         ttk.Label(smb_frame, text="Port:").grid(row=2, column=0, sticky="w", **PAD)
         ttk.Spinbox(smb_frame, from_=1, to=65535, textvariable=self._smb_port,
                     width=8).grid(row=2, column=1, sticky="w", **PAD)
@@ -319,6 +322,11 @@ class App(tk.Tk):
         if missing:
             msg = "Thiếu thư viện, cài bằng pip:\n\n" + "\n".join(missing)
             messagebox.showwarning("Thiếu thư viện", msg)
+
+    def _start_minimized(self):
+        """Thu nhỏ xuống khay hệ thống ngay khi khởi động."""
+        if HAS_TRAY:
+            self._hide_to_tray()
 
     def _auto_start(self):
         """Tự động khởi động server nếu lần trước đang bật."""
